@@ -326,6 +326,16 @@ export interface PayrollWizardState {
   transactionHash: string | null;
   isProofNearingExpiration?: boolean;
   treasuryBalanceOverride?: number | null;
+  /**
+   * Set when a proof generation or transaction submission was in flight
+   * (proofStatus/submissionStatus was not "idle") and the step reached was
+   * past "review" at the moment the draft was last persisted. Survives a
+   * browser close / network drop mid-flow so the wizard can distinguish a
+   * plain unsubmitted draft from a settlement that was interrupted
+   * mid-submission (#755). Never holds proof artifacts or transaction
+   * hashes — only the step name for display.
+   */
+  interruptedAtStep?: PayrollWizardStep | null;
 }
 
 export type ApprovalEventType =

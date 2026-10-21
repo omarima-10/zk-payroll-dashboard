@@ -153,10 +153,14 @@ function PayrollWizard() {
     hasDraft,
     restoreDraft,
     clearDraft,
+    wasInterrupted,
+    acknowledgeInterruption,
+    interruptedAtStep,
   } = usePayrollWizardStore();
   const logEvent = usePayrollAuditTrailStore((s) => s.logEvent);
   const [payrollRunId, setPayrollRunId] = useState<string | null>(null);
   const [showDraftBanner, setShowDraftBanner] = useState(false);
+  const [showInterruptedBanner, setShowInterruptedBanner] = useState(false);
   const draftResolvedRef = useRef(false);
   const initialEventRecordedRef = useRef(false);
   const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
@@ -181,6 +185,12 @@ function PayrollWizard() {
       setShowDraftBanner(true);
     }
   }, [employeeIds.length, hasDraft, submissionStatus]);
+
+  useEffect(() => {
+    if (!draftResolvedRef.current && wasInterrupted()) {
+      setShowInterruptedBanner(true);
+    }
+  }, [wasInterrupted]);
 
   const { sessionState } = useSession();
   const network = useWalletStore((s) => s.network);
@@ -554,7 +564,81 @@ function PayrollWizard() {
       {/* Wallet Reconnect Recovery Banner */}
       <WalletReconnectRecoveryBanner />
 
-      {showDraftBanner && (
+      {/* Interrupted Settlement Recovery Banner (#755) */}
+      {showInterruptedBanner && (
+        <div
+          role="alert"
+          data-testid="interrupted-settlement-banner"
+          className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3"
+        >
+          <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5 shrink-0" />
+          <div className="flex-1">
+            <h3 className="text-sm font-medium text-red-800">
+              Interrupted Settlement Detected
+            </h3>
+            <p className="text-sm text-red-700 mt-1">
+              A previous payroll settlement was interrupted while at the{" "}
+              <strong>{interruptedAtStep ?? "proof/submission"}</strong> step —
+              the browser may have closed or the network dropped mid-flow. We
+              could not confirm whether a proof or transaction had already
+              been submitted before the interruption.
+            </p>
+            <p className="text-xs text-red-600 mt-2">
+              Check the transaction history and on-chain status for this run
+              before retrying, to avoid a duplicate submission.
+            </p>
+            <div className="flex items-center gap-2 mt-3">
+              <button
+                type="button"
+                data-testid="resume-interrupted-settlement"
+                onClick={() => {
+                  acknowledgeInterruption();
+                  setShowInterruptedBanner(false);
+                  draftResolvedRef.current = true;
+                  goToStep("review");
+                  if (payrollRunId) {
+                    logEvent({
+                      payrollRunId,
+                      action: "draft_created",
+                      actor: walletPublicKey,
+                      actorRole: "admin",
+                      details: `Resumed an interrupted settlement that was previously at the ${interruptedAtStep ?? "unknown"} step.`,
+                    });
+                  }
+                }}
+                className="px-3 py-1.5 rounded-md text-xs font-medium bg-red-600 text-white hover:bg-red-700 transition-colors"
+              >
+                Review and resume
+              </button>
+              <button
+                type="button"
+                data-testid="discard-interrupted-settlement"
+                onClick={() => {
+                  if (payrollRunId) {
+                    logEvent({
+                      payrollRunId,
+                      action: "cancelled",
+                      actor: "Current Admin",
+                      actorRole: "admin",
+                      details: `Interrupted settlement discarded after manual review (was at the ${interruptedAtStep ?? "unknown"} step).`,
+                    });
+                  }
+                  clearDraft();
+                  clearApprovalHistory();
+                  setShowInterruptedBanner(false);
+                  draftResolvedRef.current = true;
+                }}
+                className="px-3 py-1.5 rounded-md text-xs font-medium bg-white text-red-700 hover:bg-red-50 border border-red-300 transition-colors inline-flex items-center gap-1"
+              >
+                <Trash2 className="w-3 h-3" />
+                Discard draft
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!showInterruptedBanner && showDraftBanner && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
           <Save className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
           <div className="flex-1">
